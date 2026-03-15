@@ -1,8 +1,26 @@
 import SwiftUI
 
+struct TransparencyGrid: View {
+    var body: some View {
+        Canvas { context, size in
+            let gridSize: CGFloat = 8
+            for y in stride(from: 0, to: size.height, by: gridSize) {
+                for x in stride(from: 0, to: size.width, by: gridSize) {
+                    if Int((x / gridSize) + (y / gridSize)) % 2 == 0 {
+                        context.fill(Path(CGRect(x: x, y: y, width: gridSize, height: gridSize)), with: .color(Color.white))
+                    } else {
+                        context.fill(Path(CGRect(x: x, y: y, width: gridSize, height: gridSize)), with: .color(Color(white: 0.85)))
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct ContentView: View {
     @StateObject private var manager = ImageManager()
     @FocusState private var focusedField: Field?
+    var onClose: () -> Void
 
     enum Field {
         case width, height
@@ -11,12 +29,16 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 20) {
             if let nsImage = manager.image {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxHeight: 300)
-                    .background(Color.black.opacity(0.1))
-                    .cornerRadius(8)
+                ZStack {
+                    TransparencyGrid()
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                }
+                .aspectRatio(nsImage.size.width / nsImage.size.height, contentMode: .fit)
+                .frame(maxWidth: .infinity, maxHeight: 300)
+                .cornerRadius(8)
+                .shadow(radius: 2)
             } else {
                 VStack(spacing: 12) {
                     Image(systemName: "photo.on.rectangle.angled")
@@ -82,15 +104,19 @@ struct ContentView: View {
                 Divider()
 
                 HStack {
-                    Button("Export to Clipboard") { 
-                        manager.exportToClipboard()
-                        // Dismiss the MenuBarExtra window more directly
-                        DispatchQueue.main.async {
-                            NSApp.keyWindow?.close()
-                        }
+                    Button("Export (PNG)") { 
+                        manager.exportToClipboard(as: .png)
+                        onClose()
+                    }
+                    Button("Export (JPG)") { 
+                        manager.exportToClipboard(as: .jpg)
+                        onClose()
                     }
                     Spacer()
-                    Button("Clear", role: .destructive) { manager.clear() }
+                    Button("Clear", role: .destructive) { 
+                        manager.clear()
+                    }
+                    .keyboardShortcut(.escape, modifiers: [])
                 }
             }
         }

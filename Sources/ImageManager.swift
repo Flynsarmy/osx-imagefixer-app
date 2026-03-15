@@ -10,18 +10,27 @@ class ImageManager: ObservableObject {
     private var originalPixelSize: NSSize?
 
     func updateImage(_ newImage: NSImage) {
-        self.image = newImage
+        let rep = newImage.representations.first
+        let pixelSize = rep.map { NSSize(width: $0.pixelsWide, height: $0.pixelsHigh) } ?? newImage.size
         
-        // Get actual pixel dimensions
-        if let rep = newImage.representations.first {
-            let pixelSize = NSSize(width: rep.pixelsWide, height: rep.pixelsHigh)
-            self.originalPixelSize = pixelSize
-            self.width = "\(rep.pixelsWide)"
-            self.height = "\(rep.pixelsHigh)"
+        // Create a clean image with the exact pixel dimensions as its size
+        let normalizedImage = NSImage(size: pixelSize)
+        if let rep = rep {
+            normalizedImage.addRepresentation(rep)
         } else {
-            self.originalPixelSize = newImage.size
-            self.width = String(format: "%.0f", newImage.size.width)
-            self.height = String(format: "%.0f", newImage.size.height)
+            normalizedImage.lockFocus()
+            newImage.draw(in: NSRect(origin: .zero, size: pixelSize))
+            normalizedImage.unlockFocus()
+        }
+        
+        self.originalPixelSize = pixelSize
+        self.width = "\(Int(pixelSize.width))"
+        self.height = "\(Int(pixelSize.height))"
+        
+        // Force SwiftUI to teardown and rebuild the image view for a fresh layout
+        self.image = nil 
+        DispatchQueue.main.async {
+            self.image = normalizedImage
         }
     }
 
@@ -75,18 +84,35 @@ class ImageManager: ObservableObject {
         }
     }
 
-    func exportToClipboard() {
-        guard let currentImage = image else { return }
+    func exportToClipboard(as format: ExportFormat) {
+        guard let currentImage = image,
+              let tiffData = currentImage.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData) else { return }
+        
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         
-        // Use TIFF representation for best compatibility
-        if let tiffData = currentImage.tiffRepresentation {
-            pasteboard.setData(tiffData, forType: .tiff)
+        let data: Data?
+        let type: NSPasteboard.PasteboardType
+        
+        switch format {
+        case .png:
+            data = bitmap.representation(using: .png, properties: [:])
+            type = .png
+        case .jpg:
+            data = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.9])
+            type = .tiff // JPG is best handled via TIFF or generic image on pasteboard for compatibility
         }
         
-        // Clear the state after export
+        if let data = data {
+            pasteboard.setData(data, forType: type)
+        }
+        
         clear()
+    }
+
+    enum ExportFormat {
+        case png, jpg
     }
 
     func updateWidthProportionally(_ newWidthStr: String) {
